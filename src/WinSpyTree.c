@@ -312,7 +312,7 @@ int FormatWindowText(HWND hwnd, TCHAR szTotal[], int cchTotal)
 // are implicitly freed by virtue of g_cTreeNodesInUse being reset back to
 // zero.  The array slots will then be recycled as the tree is repopulated.
 //
-TREENODE *AllocateTreeNode()
+ptrdiff_t AllocateTreeNode()
 {
     // Grow the array if it is full.
 
@@ -324,7 +324,7 @@ TREENODE *AllocateTreeNode()
 
         if (!rgNew)
         {
-            return NULL;
+            return -1;
         }
 
         g_TreeNodes  = rgNew;
@@ -336,11 +336,9 @@ TREENODE *AllocateTreeNode()
 
     TREENODE *pNode = &g_TreeNodes[g_cTreeNodesInUse];
 
-    g_cTreeNodesInUse++;
-
     ZeroMemory(pNode, sizeof(*pNode));
 
-    return pNode;
+    return g_cTreeNodesInUse++;
 }
 
 //
@@ -373,10 +371,12 @@ WinProc *GetProcessWindowStack(HWND hwndTree, HWND hwnd)
     GetProcessNameByPid(pid, name, 100, path, MAX_PATH);
     _stprintf_s(ach, ARRAYSIZE(ach), _T("%s  (%u)"), name, pid);
 
-    TREENODE *pNode = AllocateTreeNode();
+    TREENODE *pNode = NULL;
+    ptrdiff_t nodeIndex = AllocateTreeNode();
 
-    if (pNode)
+    if (nodeIndex >= 0)
     {
+        pNode = &g_TreeNodes[nodeIndex];
         pNode->dwPID = pid;
     }
     else
@@ -392,7 +392,7 @@ WinProc *GetProcessWindowStack(HWND hwndTree, HWND hwnd)
     tv.item.stateMask = 0;//TVIS_EXPANDED;
     tv.item.pszText = ach;
     tv.item.cchTextMax = ARRAYSIZE(ach);
-    tv.item.lParam = (LPARAM)pNode;
+    tv.item.lParam = (LPARAM)nodeIndex;
 
     if (SHGetFileInfo(path, 0, &shfi, sizeof(shfi), SHGFI_SMALLICON | SHGFI_ICON))
     {
@@ -447,10 +447,12 @@ BOOL CALLBACK AllWindowProc(HWND hwnd, LPARAM lParam)
     static HWND      hwndLast;
 
     TVINSERTSTRUCT tv;
-    TREENODE *pNode = AllocateTreeNode();
+    TREENODE *pNode = NULL;
+    ptrdiff_t nodeIndex = AllocateTreeNode();
 
-    if (pNode)
+    if (nodeIndex >= 0)
     {
+        pNode = &g_TreeNodes[nodeIndex];
         pNode->hwnd = hwnd;
     }
     else
@@ -475,7 +477,7 @@ BOOL CALLBACK AllWindowProc(HWND hwnd, LPARAM lParam)
     tv.item.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
     tv.item.pszText = szTotal;
     tv.item.cchTextMax = ARRAYSIZE(szTotal);
-    tv.item.lParam = (LPARAM)pNode;
+    tv.item.lParam = (LPARAM)nodeIndex;
 
     //
     // set the image, depending on what type of window we have
@@ -585,10 +587,12 @@ void FillGlobalWindowTree(HWND hwndTree)
 
         FormatWindowText(hwndDesktop, ach, ARRAYSIZE(ach));
 
-        TREENODE *pNode = AllocateTreeNode();
+        TREENODE *pNode = NULL;
+        ptrdiff_t nodeIndex = AllocateTreeNode();
 
-        if (pNode)
+        if (nodeIndex >= 0)
         {
+            pNode = &g_TreeNodes[nodeIndex];
             pNode->hwnd = hwndDesktop;
         }
         else
@@ -608,7 +612,7 @@ void FillGlobalWindowTree(HWND hwndTree)
         tv.item.cchTextMax = ARRAYSIZE(ach);
         tv.item.iImage = DESKTOP_IMAGE;
         tv.item.iSelectedImage = DESKTOP_IMAGE;
-        tv.item.lParam = (LPARAM)pNode;
+        tv.item.lParam = (LPARAM)nodeIndex;
 
         pNode->hTreeItem = TreeView_InsertItem(hwndTree, &tv);
         g_hRoot = pNode->hTreeItem;
@@ -786,7 +790,8 @@ void WindowTree_OnRightClick(NMHDR *pnm)
 
         TreeView_GetItem(hwndTree, &tvi);
 
-        TREENODE *pNode = (TREENODE *)tvi.lParam;
+        ptrdiff_t nodeIndex = (ptrdiff_t)tvi.lParam;
+        TREENODE *pNode = &g_TreeNodes[nodeIndex];
 
         if (pNode->hwnd)
         {
@@ -825,7 +830,8 @@ void WindowTree_OnSelectionChanged(NMHDR *pnm)
     // Get TVITEM structure
     TreeView_GetItem(pnm->hwndFrom, &item);
 
-    TREENODE *pNode = (TREENODE *)item.lParam;
+    ptrdiff_t nodeIndex = (ptrdiff_t)item.lParam;
+    TREENODE *pNode = &g_TreeNodes[nodeIndex];
 
     g_dwSelectedPID = pNode->dwPID;
 
@@ -870,7 +876,8 @@ HWND WindowTree_GetSelectedWindow()
 
         if (item.lParam)
         {
-            TREENODE *pNode = (TREENODE *)item.lParam;
+            ptrdiff_t nodeIndex = (ptrdiff_t)item.lParam;
+            TREENODE *pNode = &g_TreeNodes[nodeIndex];
             hwnd = pNode->hwnd;
         }
     }
